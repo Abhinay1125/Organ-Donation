@@ -1,0 +1,63 @@
+{
+  "model_version": "RF-v1",
+  "model_name": "Random Forest Compatibility Classifier",
+  "training_date": "2026-10-04",
+  "dataset_name": "simK Synthetic Kidney Transplantation Dataset",
+  "dataset_records": 1268,
+  "train_samples": 1014,
+  "test_samples": 254,
+  "metrics": {
+    "accuracy": 96.46,
+    "precision": 85.71,
+    "recall": 100.0,
+    "f1_score": 92.31,
+    "tn": 191,
+    "fp": 9,
+    "fn": 0,
+    "tp": 54,
+    "confusion_matrix": [
+      [
+        191,
+        9
+      ],
+      [
+        0,
+        54
+      ]
+    ]
+  },
+  "feature_importance": {
+    "mmDR": 63.05,
+    "mmB": 15.19,
+    "recipient": 7.12,
+    "donor": 5.45,
+    "dialysis": 3.17,
+    "recipient_age": 2.31,
+    "donor_age": 2.02,
+    "cPRA": 1.23,
+    "mmA": 0.44
+  },
+  "detailed_feature_importance": {
+    "mmDR": 63.05,
+    "mmB": 15.19,
+    "dialysis": 3.17,
+    "recipient_bg_A": 3.0,
+    "recipient_bg_O": 2.84,
+    "recipient_age": 2.31,
+    "donor_bg_O": 2.15,
+    "donor_bg_A": 2.08,
+    "donor_age": 2.02,
+    "cPRA": 1.23,
+    "recipient_bg_B": 0.93,
+    "donor_bg_B": 0.91,
+    "mmA": 0.44,
+    "recipient_bg_AB": 0.35,
+    "donor_bg_AB": 0.31
+  },
+  "hyperparameters": {
+    "n_estimators": 200,
+    "min_samples_leaf": 3,
+    "class_weight": "balanced",
+    "random_state": 42
+  }
+}
