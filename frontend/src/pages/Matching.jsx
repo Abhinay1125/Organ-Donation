@@ -91,6 +91,8 @@ export const Matching = ({ setCurrentTab, setSelectedOrganId }) => {
       const res = await authFetch('/api/ml/metrics');
       if (res.ok) {
         setMlMetrics(await res.json());
+      } else if (res.status === 403) {
+        setError(prev => prev || 'You do not have permission to access matching and decision support.');
       }
     } catch {
       // Non-blocking for candidate evaluation
@@ -246,7 +248,7 @@ export const Matching = ({ setCurrentTab, setSelectedOrganId }) => {
         <div>
           <strong>Clinical Decision Support Notice</strong>
           <span>
-            ML predictions are decision-support outputs, not clinical decisions. The model was trained on synthetic data. Final decisions must be made by an authorized human reviewer in accordance with applicable clinical and allocation requirements.
+            ML predictions are decision-support outputs, not clinical decisions. The model was trained on synthetic data. Final decisions must be made by an authorized human reviewer in accordance with applicable clinical and allocation requirements. HLA mismatch inputs are not collected; the model uses a blood-group-based proxy for these features.
           </span>
         </div>
       </div>
@@ -314,6 +316,8 @@ export const Matching = ({ setCurrentTab, setSelectedOrganId }) => {
               <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
                 Evaluating candidates through Rule Screening and Random Forest index...
               </div>
+            ) : error && !matchingData ? (
+              <p className="empty-state" style={{ padding: '2.5rem 1rem' }}>{error}</p>
             ) : !selectedOrgan ? (
               <p className="empty-state" style={{ padding: '2.5rem 1rem' }}>No medically approved organs available.</p>
             ) : (
@@ -523,7 +527,7 @@ export const Matching = ({ setCurrentTab, setSelectedOrganId }) => {
                 <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    onClick={() => handleReviewDecision('Approved')}
+                    onClick={() => handleReviewDecision('APPROVED')}
                     className="btn btn-primary"
                     disabled={!canReview || submittingReview || reviewNotes.trim().length < 10 || (riskNotes.length > 0 && !ackRisk)}
                   >
@@ -533,7 +537,7 @@ export const Matching = ({ setCurrentTab, setSelectedOrganId }) => {
 
                   <button
                     type="button"
-                    onClick={() => handleReviewDecision('Rejected')}
+                    onClick={() => handleReviewDecision('REJECTED')}
                     className="btn btn-danger"
                     disabled={!canReview || submittingReview || reviewNotes.trim().length < 10}
                   >

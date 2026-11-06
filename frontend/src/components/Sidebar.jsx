@@ -5,13 +5,17 @@ import {
   HeartHandshake, 
   Users, 
   Activity, 
+  FileText,
   GitMerge, 
   LineChart, 
   Shield, 
   ClipboardList,
-  Settings 
+  Settings,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
-import { canAccessTab, dutyLabel } from '../authz';
+import { dutyLabel } from '../authz';
+import { canAccessTab } from '../utils/access';
 
 export const Sidebar = ({
   currentTab,
@@ -21,6 +25,8 @@ export const Sidebar = ({
   onClose,
   id = 'app-sidebar',
   triggerRef,
+  collapsed = false,
+  onToggleCollapse,
 }) => {
   const { user } = useAuth();
   const sidebarRef = useRef(null);
@@ -31,16 +37,16 @@ export const Sidebar = ({
     { id: 'donors', label: 'Donors', icon: HeartHandshake },
     { id: 'recipients', label: 'Waiting List', icon: Users },
     { id: 'organs', label: 'Organ Journeys', icon: Activity },
-    ...(selectedOrganId ? [{ id: 'organ-detail', label: 'Organ Detail', icon: Activity }] : []),
+    { id: 'organ-detail', label: 'Organ Detail', icon: FileText },
     { id: 'matching', label: 'Matching Review', icon: GitMerge },
     { id: 'ml', label: 'ML Analytics', icon: LineChart },
-  ].filter((item) => canAccessTab(user?.role, item.id, user?.operational_role));
+  ].filter((item) => canAccessTab(user, item.id));
 
   const adminItems = [
     { id: 'blockchain', label: 'Blockchain Ledger', icon: Shield },
     { id: 'audit', label: 'Audit Records', icon: ClipboardList },
     { id: 'admin', label: 'Admin Console', icon: Settings },
-  ].filter((item) => canAccessTab(user?.role, item.id, user?.operational_role));
+  ].filter((item) => canAccessTab(user, item.id));
 
   // Focus management and keyboard navigation for drawer under 900px
   useEffect(() => {
@@ -91,7 +97,7 @@ export const Sidebar = ({
   }, [open, onClose, triggerRef]);
 
   const handleItemClick = (itemId) => {
-    if (canAccessTab(user?.role, itemId, user?.operational_role)) {
+    if (canAccessTab(user, itemId)) {
       setCurrentTab(itemId);
       if (window.innerWidth < 900) {
         onClose?.();
@@ -113,26 +119,42 @@ export const Sidebar = ({
       <aside
         id={id}
         ref={sidebarRef}
-        className={`sidebar ${open ? 'open' : ''}`}
+        className={`sidebar ${open ? 'open' : ''} ${collapsed ? 'collapsed' : ''}`}
       >
         <div className="sidebar-header">
           <div className="sidebar-brand">
             <div className="sidebar-brand-icon">
               <Activity size={16} aria-hidden="true" />
             </div>
-            <div>
-              <div className="sidebar-brand-title">
-                OrganFlow <span className="sidebar-brand-badge">{user?.role || 'PORTAL'}</span>
+            {!collapsed && (
+              <div className="sidebar-brand-text">
+                <div className="sidebar-brand-title">
+                  OrganFlow <span className="sidebar-brand-badge">{user?.role || 'PORTAL'}</span>
+                </div>
+                <div className="sidebar-brand-sub">Transplantation Registry</div>
               </div>
-              <div className="sidebar-brand-sub">Transplantation Registry</div>
-            </div>
+            )}
           </div>
+          <button
+            type="button"
+            className="sidebar-toggle-btn"
+            onClick={onToggleCollapse}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+            title={collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+          >
+            {collapsed ? (
+              <ChevronsRight size={16} aria-hidden="true" />
+            ) : (
+              <ChevronsLeft size={16} aria-hidden="true" />
+            )}
+          </button>
         </div>
 
         <nav className="sidebar-nav" aria-label="Main navigation">
           {workspaceItems.length > 0 && (
             <div className="sidebar-nav-group">
-              <div className="sidebar-nav-eyebrow">WORKSPACE</div>
+              {!collapsed && <div className="sidebar-nav-eyebrow">WORKSPACE</div>}
               <ul className="sidebar-nav-list">
                 {workspaceItems.map((item) => {
                   const Icon = item.icon;
@@ -144,9 +166,11 @@ export const Sidebar = ({
                         onClick={() => handleItemClick(item.id)}
                         className={`nav-link ${isActive ? 'active' : ''}`}
                         aria-current={isActive ? 'page' : undefined}
+                        aria-label={item.label}
+                        title={item.label}
                       >
                         <Icon size={16} aria-hidden="true" />
-                        <span>{item.label}</span>
+                        {!collapsed && <span>{item.label}</span>}
                       </button>
                     </li>
                   );
@@ -157,7 +181,7 @@ export const Sidebar = ({
 
           {adminItems.length > 0 && (
             <div className="sidebar-nav-group">
-              <div className="sidebar-nav-eyebrow">ADMINISTRATION & AUDIT</div>
+              {!collapsed && <div className="sidebar-nav-eyebrow">ADMINISTRATION & AUDIT</div>}
               <ul className="sidebar-nav-list">
                 {adminItems.map((item) => {
                   const Icon = item.icon;
@@ -169,9 +193,11 @@ export const Sidebar = ({
                         onClick={() => handleItemClick(item.id)}
                         className={`nav-link ${isActive ? 'active' : ''}`}
                         aria-current={isActive ? 'page' : undefined}
+                        aria-label={item.label}
+                        title={item.label}
                       >
                         <Icon size={16} aria-hidden="true" />
-                        <span>{item.label}</span>
+                        {!collapsed && <span>{item.label}</span>}
                       </button>
                     </li>
                   );
@@ -182,12 +208,14 @@ export const Sidebar = ({
         </nav>
 
         {user && (
-          <div className="sidebar-bottom-user">
+          <div className="sidebar-bottom-user" title={user.full_name || user.username}>
             <div className="sidebar-user-avatar">{userInitials}</div>
-            <div className="sidebar-user-info">
-              <span className="sidebar-user-name">{user.full_name || user.username}</span>
-              <small className="sidebar-user-role">{dutyLabel(user.operational_role || user.role)}</small>
-            </div>
+            {!collapsed && (
+              <div className="sidebar-user-info">
+                <span className="sidebar-user-name">{user.full_name || user.username}</span>
+                <small className="sidebar-user-role">{dutyLabel(user.operational_role || user.role)}</small>
+              </div>
+            )}
           </div>
         )}
       </aside>

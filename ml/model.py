@@ -144,7 +144,8 @@ class MLMatchingService:
                 "donor_bmi": donor.get("bmi", 24.0),
                 "recipient_bmi": recipient.get("bmi", 24.0),
                 "organ_type": donor.get("organ_type", "Kidney"),
-                "estimated_mismatches": f"HLA mmA:{mm_a}, mmB:{mm_b}, mmDR:{mm_dr}",
+                "estimated_mismatches": f"Proxy from blood-group equality (HLA typing not collected): mmA:{mm_a}, mmB:{mm_b}, mmDR:{mm_dr}",
+                "recipient_cpra": cpra,
                 "recipient_dialysis_months": dialysis
             },
             "disclaimer": "RESEARCH PROTOTYPE: AI model provides decision support only. Clinical decisions require authorized human review."

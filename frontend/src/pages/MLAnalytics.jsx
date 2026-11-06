@@ -92,6 +92,14 @@ export const MLAnalytics = () => {
   if (error && !modelInfo) {
     return (
       <div className="page-container">
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Machine Learning Decision Support & Evaluation</h1>
+            <p className="page-subtitle">
+              Evaluated Random Forest classification metrics, confusion matrix, and feature importances
+            </p>
+          </div>
+        </div>
         <RequestMessage message={error} onRetry={fetchMetrics} />
       </div>
     );

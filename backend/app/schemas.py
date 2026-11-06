@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 
@@ -84,13 +84,13 @@ class HospitalDirectoryResponse(BaseModel):
 class DonorCreate(BaseModel):
     donor_id: str
     name: str
-    age: int
+    age: int = Field(ge=0, le=120)
     gender: str
     blood_group: str
     organ_type: str
-    height_cm: Optional[float] = None
-    weight_kg: Optional[float] = None
-    bmi: float
+    height_cm: Optional[float] = Field(default=None, ge=30, le=250)
+    weight_kg: Optional[float] = Field(default=None, ge=2, le=400)
+    bmi: float = Field(ge=5, le=100)
     hospital_id: int
     medical_notes: Optional[str] = None
 
@@ -123,16 +123,16 @@ class DonorResponse(BaseModel):
 class RecipientCreate(BaseModel):
     recipient_id: str
     name: str
-    age: int
+    age: int = Field(ge=0, le=120)
     gender: str
     blood_group: str
     required_organ: str
-    height_cm: Optional[float] = None
-    weight_kg: Optional[float] = None
-    bmi: float
+    height_cm: Optional[float] = Field(default=None, ge=30, le=250)
+    weight_kg: Optional[float] = Field(default=None, ge=2, le=400)
+    bmi: float = Field(ge=5, le=100)
     hospital_id: int
-    cpra: Optional[float] = 0.0
-    dialysis_months: Optional[float] = 12.0
+    cpra: Optional[float] = Field(default=0.0, ge=0, le=100)
+    dialysis_months: Optional[float] = Field(default=0.0, ge=0)
     urgency_tier: Optional[str] = "STANDARD"
 
 class RecipientResponse(BaseModel):
@@ -190,6 +190,7 @@ class OrganMovementCreate(BaseModel):
     location: str
     notes: Optional[str] = None
     destination_hospital_id: Optional[int] = None
+    current_stage: Optional[str] = None
 
 class OrganMovementResponse(BaseModel):
     id: int

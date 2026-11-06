@@ -42,7 +42,8 @@ def test_model_inference():
         "organ_type": "Kidney",
         "age": 38,
         "bmi": 24.0,
-        "dialysis": 18.0
+        "dialysis": 18.0,
+        "cPRA": 42.5
     }
     incompatible_recipient = {
         "recipient_id": "R-202",
@@ -57,6 +58,8 @@ def test_model_inference():
     assert res_comp["rule_screening"]["passed"] is True
     assert res_comp["compatibility_score"] >= 70.0
     assert res_comp["model_version"] == "RF-v1"
+    assert res_comp["input_features"]["recipient_cpra"] == 42.5
+    assert "Proxy" in res_comp["input_features"]["estimated_mismatches"]
     print(f"  [PASS] Compatible candidate scored: {res_comp['compatibility_score']}% ({res_comp['recommendation']})")
 
     res_incomp = ml_service.predict_pair(donor, incompatible_recipient)

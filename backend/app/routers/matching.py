@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 from backend.app.database import get_db
 from backend.app.models import Organ, Donor, Recipient, MatchRun, User, AuditLog, Hospital
 from backend.app.schemas import MatchReviewRequest, DirectMLPredictRequest
-from backend.app.auth import get_current_user, require_roles, require_hospital_assignment, ensure_operational_role, ensure_not_record_registrar
+from backend.app.auth import require_matching_reviewer, require_hospital_assignment, ensure_not_record_registrar
 from ml.model import ml_service
 from backend.app.blockchain_service import blockchain_service
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/matching", tags=["Matching & AI Decision Support
 def evaluate_matching_candidates(
     organ_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["ADMIN", "HOSPITAL"]))
+    current_user: User = Depends(require_matching_reviewer)
 ):
     """
     Ranks potential recipients for an available organ using:
@@ -27,7 +27,6 @@ def evaluate_matching_candidates(
     if not organ:
         raise HTTPException(status_code=404, detail="Organ not found")
     require_hospital_assignment(current_user, organ.source_hospital_id)
-    ensure_operational_role(current_user, ["ORGAN_MATCHING_ORGANIZER"])
     if organ.status != "MEDICALLY_APPROVED":
         raise HTTPException(status_code=409, detail="Matching is available only for medically approved organs")
 
@@ -64,7 +63,7 @@ def evaluate_matching_candidates(
             "blood_group": c.blood_group,
             "organ_type": c.required_organ,
             "bmi": c.bmi,
-            "cpra": c.cpra,
+            "cPRA": c.cpra,
             "dialysis": c.dialysis_months,
             "waiting_days": waiting_days,
             "hospital_name": hosp.name if hosp else "Unknown Hospital"
@@ -97,7 +96,7 @@ def submit_authorized_match_review(
     organ_id: int,
     review_in: MatchReviewRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(["HOSPITAL", "ADMIN"]))
+    current_user: User = Depends(require_matching_reviewer)
 ):
     """
     Authorized human review of AI-generated recommendation:
@@ -118,7 +117,6 @@ def submit_authorized_match_review(
         raise HTTPException(status_code=404, detail="Selected recipient not found")
     if review_in.decision == "APPROVED":
         ensure_not_record_registrar(db, current_user, "PATIENT_WAITING_LIST_REGISTERED", "RECIPIENT", recipient.recipient_id)
-    ensure_operational_role(current_user, ["ORGAN_MATCHING_ORGANIZER"])
     if recipient.status != "WAITING" or organ.organ_type.casefold() not in recipient.required_organ.casefold():
         raise HTTPException(status_code=409, detail="Recipient is not eligible for this organ")
 
@@ -212,10 +210,9 @@ def submit_authorized_match_review(
 @router.post("/direct-predict")
 def direct_prediction_sandbox(
     req: DirectMLPredictRequest,
-    current_user: User = Depends(require_roles(["ADMIN", "HOSPITAL"]))
+    current_user: User = Depends(require_matching_reviewer)
 ):
     """Interactive sandbox for ad-hoc compatibility prediction and explainability."""
-    ensure_operational_role(current_user, ["ORGAN_MATCHING_ORGANIZER"])
     donor = {
         "age": req.donor_age,
         "blood_group": req.donor_bg,

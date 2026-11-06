@@ -89,7 +89,8 @@ class DutyAPITests(unittest.TestCase):
             headers = self.headers(username)
             for path in ("/api/donors", "/api/recipients", "/api/organs", "/api/hospitals"):
                 self.assertEqual(self.client.get(path, headers=headers).status_code, 200, (username, path))
-            self.assertEqual(self.client.get("/api/ml/metrics", headers=headers).status_code, 200, username)
+            metrics_status = self.client.get("/api/ml/metrics", headers=headers).status_code
+            self.assertEqual(metrics_status, 200 if username == "matching" else 403, username)
 
             matching_status = self.client.get(
                 f"/api/matching/candidates/{self.records['organ']}", headers=headers
@@ -102,6 +103,7 @@ class DutyAPITests(unittest.TestCase):
             "/api/blockchain/transactions", "/api/audit", "/api/admin/stats",
         ):
             self.assertEqual(self.client.get(path, headers=admin_headers).status_code, 200, path)
+        self.assertEqual(self.client.get("/api/ml/metrics", headers=admin_headers).status_code, 403)
         self.assertEqual(
             self.client.get(f"/api/matching/candidates/{self.records['organ']}",
                             headers=admin_headers).status_code,

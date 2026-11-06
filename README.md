@@ -270,6 +270,22 @@ All components feature comprehensive automated test suites:
   # Result: 0 errors, 1,514 modules compiled successfully
   ```
 
+## Known Limitations
+
+- Donor/recipient HLA typing is not collected; HLA mismatch model inputs are a
+  blood-group-based proxy.
+- The model was trained on a synthetic kidney dataset; scores for other organs
+  are not validated; outputs are decision support only.
+- Dialysis duration applies to kidney recipients; 0 means "not applicable" for
+  other organs.
+- Waiting days are computed from Recipient.waiting_since, which defaults to the
+  UTC time the record was created in this system (models.py). It is not a
+  clinical listing date. Seeded demo records may set it explicitly:
+  seed_data.py backdates four synthetic recipients by 420, 260, 190, and 95
+  days from the seed run's current UTC time.
+- When the ledger node is offline, a locally generated reference is stored
+  instead of an on-chain transaction.
+
 ---
 
 ## 10. Research Prototype Disclaimer

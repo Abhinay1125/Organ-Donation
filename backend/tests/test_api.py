@@ -21,7 +21,12 @@ os.environ["DATABASE_URL"] = f"sqlite:///{Path(tempfile.mkdtemp(prefix='organ-ap
 
 from fastapi.testclient import TestClient
 from uuid import uuid4
+from backend.app.auth import create_access_token
+from backend.app.database import SessionLocal
 from backend.app.main import app
+from backend.app.models import User
+from backend.app.routers import matching as matching_router
+from backend.app.routers import recipients as recipients_router
 from backend.app.seed_data import seed_database
 
 # Ensure seed data is populated
@@ -83,6 +88,83 @@ def test_donors_and_organs():
     assert next(organ for organ in organs if organ["matched_recipient_id"])["matched_recipient_ref"] == "REC-201"
     print(f"  [PASS] Retrieved {len(organs)} organs.")
 
+def _patient_doctor_headers():
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.operational_role == "PATIENT_DOCTOR").first()
+        assert user is not None
+        token = create_access_token({"sub": user.username, "role": user.role, "id": user.id})
+        hospital_id = user.hospital_id
+    return {"Authorization": f"Bearer {token}"}, hospital_id
+
+def test_recipient_dialysis_zero_and_create_validation(monkeypatch):
+    monkeypatch.setattr(
+        recipients_router.blockchain_service,
+        "record_patient_registration",
+        lambda **kwargs: "DEMO-TEST-RECIPIENT",
+    )
+    headers, hospital_id = _patient_doctor_headers()
+    recipient_payload = {
+        "recipient_id": f"REC-API-{uuid4().hex[:8].upper()}",
+        "name": "Synthetic Liver Recipient",
+        "age": 38,
+        "gender": "OTHER",
+        "blood_group": "O+",
+        "required_organ": "Liver",
+        "height_cm": 162,
+        "weight_kg": 60,
+        "bmi": 22.8,
+        "hospital_id": hospital_id,
+        "dialysis_months": 0,
+    }
+
+    registered = client.post("/api/recipients", json=recipient_payload, headers=headers)
+    assert registered.status_code == 200, registered.text
+    assert registered.json()["dialysis_months"] == 0
+
+    invalid_payloads = []
+    invalid_payloads.append({**recipient_payload, "recipient_id": f"REC-API-{uuid4().hex[:8].upper()}", "cpra": 150})
+    invalid_payloads.append({**recipient_payload, "recipient_id": f"REC-API-{uuid4().hex[:8].upper()}", "dialysis_months": -1})
+
+    missing_gender = {**recipient_payload, "recipient_id": f"REC-API-{uuid4().hex[:8].upper()}"}
+    missing_gender.pop("gender")
+    invalid_payloads.append(missing_gender)
+    for height in (29, 251):
+        invalid_payloads.append({
+            **recipient_payload,
+            "recipient_id": f"REC-API-{uuid4().hex[:8].upper()}",
+            "height_cm": height,
+        })
+    for weight in (1, 401):
+        invalid_payloads.append({
+            **recipient_payload,
+            "recipient_id": f"REC-API-{uuid4().hex[:8].upper()}",
+            "weight_kg": weight,
+        })
+
+    for payload in invalid_payloads:
+        response = client.post("/api/recipients", json=payload, headers=headers)
+        assert response.status_code == 422, response.text
+
+def test_matching_candidates_pass_cpra_key_to_ml(monkeypatch):
+    seen_candidates = []
+
+    def capture_candidates(donor, candidates):
+        seen_candidates.extend(candidates)
+        return []
+
+    monkeypatch.setattr(matching_router.ml_service, "rank_candidates", capture_candidates)
+    login = client.post("/api/auth/login", json={"username": "dr_sharma", "password": "hospital123"})
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    organs = client.get("/api/organs", headers=headers)
+    assert organs.status_code == 200
+    organ = next(item for item in organs.json() if item["status"] == "MEDICALLY_APPROVED")
+
+    response = client.get(f"/api/matching/candidates/{organ['id']}", headers=headers)
+    assert response.status_code == 200, response.text
+    assert seen_candidates
+    assert all("cPRA" in candidate for candidate in seen_candidates)
+
 def test_matching_and_ai():
     res_login = client.post("/api/auth/login", json={"username": "dr_sharma", "password": "hospital123"})
     token = res_login.json()["access_token"]
@@ -102,8 +184,67 @@ def test_matching_and_ai():
     assert data["model_version"] == "RF-v1"
     print(f"  [PASS] Matching candidates evaluated: {len(data['ranked_candidates'])} candidates ranked by AI.")
 
+def test_matching_and_ml_access_control():
+    def login_headers(username, password):
+        response = client.post("/api/auth/login", json={"username": username, "password": password})
+        assert response.status_code == 200
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    admin_headers = login_headers("admin", "admin123")
+    surgeon_headers = login_headers("dr_ananya", "surgeon123")
+    matching_headers = login_headers("dr_sharma", "hospital123")
+    organs_response = client.get("/api/organs", headers=matching_headers)
+    assert organs_response.status_code == 200
+    organ = next(organ for organ in organs_response.json() if organ["status"] == "MEDICALLY_APPROVED")
+    organ_id = organ["id"]
+
+    matching_response = client.get(
+        f"/api/matching/candidates/{organ_id}", headers=matching_headers
+    )
+    assert matching_response.status_code == 200
+    recipient_id = matching_response.json()["ranked_candidates"][0]["id"]
+    review_body = {
+        "decision": "REJECTED",
+        "notes": "Synthetic test review",
+        "recipient_id": recipient_id,
+    }
+    direct_body = {
+        "donor_age": 35,
+        "recipient_age": 40,
+        "donor_bg": "O+",
+        "recipient_bg": "O+",
+    }
+    endpoints = [
+        ("GET", f"/api/matching/candidates/{organ_id}", None),
+        ("POST", f"/api/matching/review/{organ_id}", review_body),
+        ("POST", "/api/matching/direct-predict", direct_body),
+        ("GET", "/api/ml/metrics", None),
+    ]
+
+    for method, path, body in endpoints:
+        for headers in (None, admin_headers, surgeon_headers):
+            response = client.request(method, path, json=body, headers=headers)
+            assert response.status_code == (401 if headers is None else 403), (method, path)
+        response = client.request(method, path, json=body, headers=matching_headers)
+        assert response.status_code == 200, (method, path, response.text)
+
+    for path, method, body in (
+        ("/api/matching/candidates/99999999", "GET", None),
+        ("/api/matching/review/99999999", "POST", review_body),
+    ):
+        for headers in (admin_headers, surgeon_headers):
+            response = client.request(method, path, json=body, headers=headers)
+            assert response.status_code == 403, (method, path)
+
+    invalid_review = client.post(
+        f"/api/matching/review/{organ_id}",
+        json={"decision": "approve", "notes": "Synthetic test review", "recipient_id": recipient_id},
+        headers=matching_headers,
+    )
+    assert invalid_review.status_code == 422
+
 def test_ml_metrics():
-    res_login = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+    res_login = client.post("/api/auth/login", json={"username": "dr_sharma", "password": "hospital123"})
     token = res_login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -157,7 +298,10 @@ def test_admin_stats_access_control():
     admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
     res_admin = client.get("/api/admin/stats", headers=admin_headers)
     assert res_admin.status_code == 200
-    assert set(res_admin.json()) == {"donors", "recipients", "organs", "matches", "blockchain", "ml"}
+    stats = res_admin.json()
+    assert set(stats) == {"donors", "recipients", "organs", "matches", "blockchain", "ml"}
+    assert stats["ml"]["is_ready"] is True
+    assert stats["ml"]["model_version"]
     print("  [PASS] Admin stats restricted to authenticated administrators.")
 
 def test_hospital_listing_and_creation_authorization():
@@ -200,6 +344,7 @@ if __name__ == "__main__":
     test_auth_and_login()
     test_donors_and_organs()
     test_matching_and_ai()
+    test_matching_and_ml_access_control()
     test_ml_metrics()
     test_blockchain_and_audit()
     test_admin_stats_access_control()

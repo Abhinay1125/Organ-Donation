@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
-import { canAccessTab } from './authz';
+import { canAccessTab } from './utils/access';
 
 // Pages
 import { Login } from './pages/Login';
@@ -21,12 +21,62 @@ export function App() {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [selectedOrganId, setSelectedOrganId] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('sidebarCollapsed');
+      if (saved !== null) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // fallback
+    }
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      return window.matchMedia('(max-width: 768px)').matches;
+    }
+    return false;
+  });
   const menuButtonRef = useRef(null);
 
   const handleTabChange = (tab) => {
     setCurrentTab(tab);
     setSidebarOpen(false);
   };
+
+  const openOrgan = (organId) => {
+    setSelectedOrganId(organId);
+    handleTabChange('organ-detail');
+  };
+
+  const handleToggleSidebarCollapse = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('sidebarCollapsed', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        setSidebarCollapsed((prev) => {
+          const next = !prev;
+          try {
+            localStorage.setItem('sidebarCollapsed', JSON.stringify(next));
+          } catch {
+            // ignore
+          }
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -44,6 +94,13 @@ export function App() {
         : 'dashboard';
     setCurrentTab(landingTab);
   }, [user]);
+
+  // Fall back to the Overview tab if the active tab becomes disallowed
+  useEffect(() => {
+    if (user && !canAccessTab(user, currentTab)) {
+      setCurrentTab('dashboard');
+    }
+  }, [user, currentTab]);
 
   if (initializing) {
     return <div className="page-container" role="status" aria-live="polite">Restoring your session...</div>;
@@ -66,12 +123,12 @@ export function App() {
   }
 
   const renderContent = () => {
-    if (!canAccessTab(user.role, currentTab, user.operational_role)) {
+    if (!canAccessTab(user, currentTab)) {
       return (
         <div className="card" role="alert">
-          <h1 className="page-title">Access denied</h1>
+          <h1 className="page-title">Access restricted</h1>
           <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
-            Your account is not authorized to view this page.
+            Your role does not have access to this section.
           </p>
         </div>
       );
@@ -82,6 +139,7 @@ export function App() {
           <Dashboard 
             setCurrentTab={handleTabChange} 
             setSelectedOrganId={setSelectedOrganId} 
+            openOrgan={openOrgan}
           />
         );
       case 'donors':
@@ -93,6 +151,7 @@ export function App() {
           <Organs 
             setSelectedOrganId={setSelectedOrganId} 
             setCurrentTab={handleTabChange} 
+            openOrgan={openOrgan}
           />
         );
       case 'organ-detail':
@@ -107,6 +166,7 @@ export function App() {
           <Matching 
             setCurrentTab={handleTabChange} 
             setSelectedOrganId={setSelectedOrganId} 
+            openOrgan={openOrgan}
           />
         );
       case 'ml':
@@ -122,6 +182,7 @@ export function App() {
           <Dashboard 
             setCurrentTab={handleTabChange} 
             setSelectedOrganId={setSelectedOrganId} 
+            openOrgan={openOrgan}
           />
         );
     }
@@ -139,6 +200,8 @@ export function App() {
           setCurrentTab={handleTabChange}
           selectedOrganId={selectedOrganId}
           triggerRef={menuButtonRef}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={handleToggleSidebarCollapse}
         />
         <div className="main-content">
           <Navbar

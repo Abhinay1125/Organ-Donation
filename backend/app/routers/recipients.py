@@ -78,7 +78,10 @@ def register_recipient(
         hospital_id=recipient_in.hospital_id,
         status="WAITING",
         cpra=recipient_in.cpra or 0.0,
-        dialysis_months=recipient_in.dialysis_months or 12.0,
+        dialysis_months=(
+            recipient_in.dialysis_months
+            if recipient_in.dialysis_months is not None else 0.0
+        ),
         urgency_tier=recipient_in.urgency_tier or "STANDARD",
         blockchain_tx=tx_hash
     )

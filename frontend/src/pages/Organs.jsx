@@ -5,7 +5,7 @@ import { RequestMessage } from '../components/RequestMessage';
 import { getApiError } from '../apiErrors';
 import { Activity, ArrowRight, Search, Filter } from 'lucide-react';
 
-export const Organs = ({ setSelectedOrganId, setCurrentTab }) => {
+export const Organs = ({ setSelectedOrganId, setCurrentTab, openOrgan }) => {
   const { authFetch } = useAuth();
   const [organs, setOrgans] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -168,8 +168,12 @@ export const Organs = ({ setSelectedOrganId, setCurrentTab }) => {
                 <td>
                   <button
                     onClick={() => {
-                      setSelectedOrganId(org.id);
-                      setCurrentTab('organ-detail');
+                      if (openOrgan) {
+                        openOrgan(org.id);
+                      } else {
+                        setSelectedOrganId(org.id);
+                        setCurrentTab('organ-detail');
+                      }
                     }}
                     className="btn btn-outline btn-sm"
                   >

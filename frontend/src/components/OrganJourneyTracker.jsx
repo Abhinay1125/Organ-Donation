@@ -9,71 +9,29 @@ import {
   User, 
   FileText, 
   Hash, 
-  ArrowRight,
-  Shield,
-  Layers,
-  Minus
+  ArrowRight, 
+  Shield, 
+  Layers, 
+  Minus,
+  Lock,
+  PlayCircle,
+  Sparkles
 } from 'lucide-react';
 import { dutyLabel } from '../authz';
 import { StatusBadge } from './StatusBadge';
+import {
+  JOURNEY_MILESTONES,
+  STATUS_INDEX_MAP,
+  formatJourneyTime,
+  calculateElapsedTime,
+  cleanActor
+} from '../utils/journey.js';
 
-export const JOURNEY_MILESTONES = [
-  { key: 'donor_facility', label: 'Donor Hospital', movementStage: null, fallbackRole: 'Procurement / Medical Clearance' },
-  { key: 'retrieved', label: 'Organ Retrieved', movementStage: 'RETRIEVED', fallbackRole: 'Donor Surgeon' },
-  { key: 'packaged', label: 'Packaging', movementStage: 'PACKAGED', fallbackRole: 'Donor Surgeon' },
-  { key: 'dispatched', label: 'Dispatched', movementStage: 'DISPATCHED', fallbackRole: 'Transporter' },
-  { key: 'transport', label: 'Transportation (application-recorded checkpoint)', movementStage: 'IN_TRANSIT', fallbackRole: 'Transporter' },
-  { key: 'destination_arrival', label: 'Destination Hospital', movementStage: 'DELIVERED', fallbackRole: 'Transporter' },
-  { key: 'received', label: 'Received', movementStage: 'RECEIVED', fallbackRole: 'Transplant Surgeon' },
-  { key: 'transplanted', label: 'Transplantation', movementStage: 'TRANSPLANTED', fallbackRole: 'Transplant Surgeon' }
-];
-
-export const STATUS_INDEX_MAP = {
-  MEDICALLY_APPROVED: 0,
-  MATCHED: 0,
-  READY_FOR_RETRIEVAL: 0,
-  RETRIEVED: 1,
-  PACKAGED: 2,
-  DISPATCHED: 3,
-  IN_TRANSIT: 4,
-  DELIVERED: 5,
-  RECEIVED: 6,
-  TRANSPLANTED: 7
-};
-
-export const formatJourneyTime = (dateStr) => {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return null;
-  const day = d.getDate();
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const month = months[d.getMonth()];
-  const year = d.getFullYear();
-  let hours = d.getHours();
-  const minutes = d.getMinutes().toString().padStart(2, '0');
-  const seconds = d.getSeconds().toString().padStart(2, '0');
-  const ampm = hours >= 12 ? 'pm' : 'am';
-  hours = hours % 12 || 12;
-  return `${day} ${month} ${year}, ${hours}:${minutes}:${seconds} ${ampm}`;
-};
-
-export const calculateElapsedTime = (currDate, prevDate) => {
-  if (!currDate || !prevDate) return null;
-  const curr = new Date(currDate).getTime();
-  const prev = new Date(prevDate).getTime();
-  if (isNaN(curr) || isNaN(prev) || curr < prev) return null;
-
-  const totalSec = Math.floor((curr - prev) / 1000);
-  if (totalSec < 60) return `${totalSec}s`;
-  const hrs = Math.floor(totalSec / 3600);
-  const mins = Math.floor((totalSec % 3600) / 60);
-  if (hrs > 0) return `${hrs}h ${mins}m`;
-  return `${mins}m`;
-};
-
-const cleanActor = (name) => {
-  if (!name) return '';
-  return name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+export {
+  JOURNEY_MILESTONES,
+  STATUS_INDEX_MAP,
+  formatJourneyTime,
+  calculateElapsedTime
 };
 
 export const OrganJourneyTracker = ({
@@ -81,8 +39,16 @@ export const OrganJourneyTracker = ({
   movements = [],
   sourceHospital,
   destinationHospital,
+  donor = null,
+  matchedRecipient = null,
   compact = false,
   onNavigateDetail = null,
+  authorizedStages = [],
+  nextPermissibleStages = [],
+  onInitiateTransition = null,
+  onInspectStage = null,
+  onRestrictedClick = null,
+  user = null,
 }) => {
   if (!organ) {
     return (
@@ -103,17 +69,35 @@ export const OrganJourneyTracker = ({
     if (m.movementStage) {
       movement = movements.find((mv) => mv.stage === m.movementStage);
     }
+    if (m.key === 'donor_facility' && !movement) {
+      movement = movements.find((mv) => mv.stage === 'READY_FOR_RETRIEVAL' || mv.stage === 'MEDICALLY_APPROVED');
+    }
 
     let state = 'pending';
-    if (m.key === 'donor_facility') {
-      state = currentIdx === 0 ? 'current' : 'completed';
+    if (organ.status === 'TRANSPLANTED') {
+      state = 'completed';
+    } else if (m.key === 'donor_facility') {
+      if (organ.status === 'READY_FOR_RETRIEVAL' || idx < currentIdx || (movement && movement.stage === 'READY_FOR_RETRIEVAL')) {
+        state = 'completed';
+      } else {
+        state = 'current';
+      }
     } else if (idx < currentIdx) {
       state = movement ? 'completed' : 'no-record';
     } else if (idx === currentIdx) {
-      state = organ.status === 'TRANSPLANTED' && m.key === 'transplanted' ? 'completed' : 'current';
+      state = 'current';
     } else {
       state = 'pending';
     }
+
+    // Check if this milestone corresponds to an authorized or restricted next transition
+    const isPermissibleNext = Boolean(
+      m.transitionStage && nextPermissibleStages.includes(m.transitionStage) && state !== 'completed'
+    );
+    const isAuthorized = Boolean(
+      isPermissibleNext && authorizedStages.includes(m.transitionStage)
+    );
+    const isRestricted = Boolean(isPermissibleNext && !isAuthorized);
 
     let elapsed = null;
     if (movement && movement.timestamp) {
@@ -131,10 +115,13 @@ export const OrganJourneyTracker = ({
     let tx = null;
 
     if (m.key === 'donor_facility') {
-      location = srcName;
-      duty = m.fallbackRole;
+      location = movement?.location || srcName;
+      actor = movement?.actor_name || null;
+      duty = movement?.actor_role ? dutyLabel(movement.actor_role) : m.fallbackRole;
+      notes = movement?.notes || (donor ? `Donor screening clearance: ${donor.blood_group}, age ${donor.age} yrs` : 'Donor hospital initial verification');
+      tx = movement?.blockchain_tx || donor?.blockchain_tx || null;
     } else if (m.key === 'destination_arrival') {
-      location = dstName;
+      location = movement?.location || dstName;
       if (movement) {
         actor = movement.actor_name;
         duty = movement.actor_role ? dutyLabel(movement.actor_role) : m.fallbackRole;
@@ -155,6 +142,10 @@ export const OrganJourneyTracker = ({
       ...m,
       movement,
       state,
+      isPermissibleNext,
+      isAuthorized,
+      isRestricted,
+      isActionable: isAuthorized,
       elapsed,
       location,
       actor,
@@ -201,27 +192,91 @@ export const OrganJourneyTracker = ({
             const isCompleted = stage.state === 'completed';
             const isCurrent = stage.state === 'current';
             const isNoRecord = stage.state === 'no-record';
+            const isActionable = stage.isActionable;
+            const isRestricted = stage.isRestricted;
+            const isClickable = !compact && (isCompleted || isCurrent || isActionable || isRestricted);
+
+            const stepClasses = [
+              'journey-step-item',
+              `step-${stage.state}`,
+              isActionable ? 'step-actionable' : '',
+              isRestricted ? 'step-restricted' : '',
+            ].filter(Boolean).join(' ');
+
+            const handleStepClick = () => {
+              if (compact) return;
+              if (isActionable && onInitiateTransition) {
+                onInitiateTransition(stage.transitionStage, stage);
+              } else if (isRestricted && onRestrictedClick) {
+                onRestrictedClick(stage);
+              } else if ((isCompleted || isCurrent) && onInspectStage) {
+                onInspectStage(stage);
+              }
+            };
 
             return (
               <li
                 key={stage.key}
-                className={`journey-step-item step-${stage.state}`}
+                className={stepClasses}
                 aria-current={isCurrent ? 'step' : undefined}
               >
-                <div className="journey-step-marker">
-                  {isCompleted && <CheckCircle2 size={16} aria-hidden="true" className="marker-icon completed" />}
-                  {isCurrent && <CircleDot size={16} aria-hidden="true" className="marker-icon current" />}
-                  {isNoRecord && <Minus size={14} aria-hidden="true" className="marker-icon norecord" />}
-                  {!isCompleted && !isCurrent && !isNoRecord && (
-                    <Circle size={14} aria-hidden="true" className="marker-icon pending" />
-                  )}
-                </div>
-                <div className="journey-step-content">
-                  <span className="journey-step-label">{stage.label}</span>
-                  <span className="journey-step-status-text">
-                    {isCompleted ? 'Completed' : isCurrent ? 'Active Stage' : isNoRecord ? 'Logged' : 'Pending'}
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleStepClick}
+                  disabled={!isClickable}
+                  className={`journey-step-btn ${isClickable ? 'is-clickable' : ''}`}
+                  title={
+                    isActionable
+                      ? `Authorized: Click to advance to ${stage.label}`
+                      : isRestricted
+                      ? `Restricted to ${stage.fallbackRole}`
+                      : isCompleted
+                      ? `Completed: Click to inspect ${stage.label} history`
+                      : isCurrent
+                      ? `Active: Click to inspect ${stage.label} details`
+                      : `${stage.label} (Prerequisites pending)`
+                  }
+                  aria-label={
+                    isActionable
+                      ? `Advance to ${stage.label}`
+                      : isRestricted
+                      ? `${stage.label} (Restricted to ${stage.fallbackRole})`
+                      : `${stage.label} (${stage.state})`
+                  }
+                >
+                  <div className="journey-step-marker">
+                    {isActionable && <PlayCircle size={15} aria-hidden="true" className="marker-icon actionable" />}
+                    {!isActionable && isRestricted && <Lock size={13} aria-hidden="true" className="marker-icon restricted" />}
+                    {!isActionable && !isRestricted && isCompleted && <CheckCircle2 size={16} aria-hidden="true" className="marker-icon completed" />}
+                    {!isActionable && !isRestricted && isCurrent && <CircleDot size={16} aria-hidden="true" className="marker-icon current" />}
+                    {!isActionable && !isRestricted && isNoRecord && <Minus size={14} aria-hidden="true" className="marker-icon norecord" />}
+                    {!isActionable && !isRestricted && !isCompleted && !isCurrent && !isNoRecord && (
+                      <Circle size={14} aria-hidden="true" className="marker-icon pending" />
+                    )}
+                  </div>
+                  <div className="journey-step-content">
+                    <span className="journey-step-label">{stage.label}</span>
+                    <span className="journey-step-status-text">
+                      {isActionable ? (
+                        <span className="journey-action-tag">
+                          <Sparkles size={9} aria-hidden="true" /> Action Available
+                        </span>
+                      ) : isRestricted ? (
+                        <span className="journey-restricted-tag">
+                          <Lock size={9} aria-hidden="true" /> Restricted
+                        </span>
+                      ) : isCompleted ? (
+                        'Completed'
+                      ) : isCurrent ? (
+                        'Active Stage'
+                      ) : isNoRecord ? (
+                        'Logged'
+                      ) : (
+                        'Pending'
+                      )}
+                    </span>
+                  </div>
+                </button>
               </li>
             );
           })}
@@ -238,7 +293,7 @@ export const OrganJourneyTracker = ({
               const isPastOrCurrent = item.state === 'completed' || item.state === 'current';
 
               return (
-                <li key={item.key} className={`journey-log-item state-${item.state}`}>
+                <li key={item.key} className={`journey-log-item state-${item.state} ${item.isActionable ? 'state-actionable' : ''}`}>
                   {/* Left Column: Timestamp */}
                   <div className="journey-log-time-col">
                     {formattedDate ? (
@@ -250,28 +305,47 @@ export const OrganJourneyTracker = ({
                       </>
                     ) : (
                       <span className="journey-log-notime">
-                        {isPastOrCurrent ? 'Implicit transition' : 'Pending'}
+                        {item.isActionable ? 'Ready to record' : item.isRestricted ? 'Restricted duty' : isPastOrCurrent ? 'Implicit transition' : 'Pending'}
                       </span>
                     )}
                   </div>
 
                   {/* Marker Node */}
                   <div className="journey-log-marker-col">
-                    <div className={`journey-node node-${item.state}`}>
-                      {item.state === 'completed' && <CheckCircle2 size={13} aria-hidden="true" />}
-                      {item.state === 'current' && <CircleDot size={13} aria-hidden="true" />}
-                      {item.state === 'pending' && <Circle size={10} aria-hidden="true" />}
-                      {item.state === 'no-record' && <Minus size={11} aria-hidden="true" />}
+                    <div className={`journey-node node-${item.state} ${item.isActionable ? 'node-actionable' : ''}`}>
+                      {item.isActionable && <PlayCircle size={14} aria-hidden="true" />}
+                      {!item.isActionable && item.isRestricted && <Lock size={12} aria-hidden="true" />}
+                      {!item.isActionable && !item.isRestricted && item.state === 'completed' && <CheckCircle2 size={13} aria-hidden="true" />}
+                      {!item.isActionable && !item.isRestricted && item.state === 'current' && <CircleDot size={13} aria-hidden="true" />}
+                      {!item.isActionable && !item.isRestricted && item.state === 'pending' && <Circle size={10} aria-hidden="true" />}
+                      {!item.isActionable && !item.isRestricted && item.state === 'no-record' && <Minus size={11} aria-hidden="true" />}
                     </div>
                     {idx < milestonesWithData.length - 1 && <div className="journey-connector-line" />}
                   </div>
 
                   {/* Right Content Card */}
-                  <div className="journey-log-card">
+                  <div
+                    className={`journey-log-card ${(item.state === 'completed' || item.state === 'current') && onInspectStage ? 'card-clickable' : ''}`}
+                    onClick={() => {
+                      if ((item.state === 'completed' || item.state === 'current') && onInspectStage) {
+                        onInspectStage(item);
+                      }
+                    }}
+                  >
                     <div className="journey-card-top">
                       <span className="journey-card-heading">{item.label}</span>
                       <span className={`journey-state-pill pill-${item.state}`}>
-                        {item.state === 'completed' ? 'Completed' : item.state === 'current' ? 'Current Stage' : item.state === 'no-record' ? 'Implicit' : 'Pending'}
+                        {item.isActionable
+                          ? 'Action Available'
+                          : item.isRestricted
+                          ? 'Restricted'
+                          : item.state === 'completed'
+                          ? 'Completed'
+                          : item.state === 'current'
+                          ? 'Current Stage'
+                          : item.state === 'no-record'
+                          ? 'Implicit'
+                          : 'Pending'}
                       </span>
                     </div>
 
@@ -313,6 +387,48 @@ export const OrganJourneyTracker = ({
 
                     {item.notes && (
                       <p className="journey-card-notes">"{item.notes}"</p>
+                    )}
+
+                    {/* Action trigger button inside card for actionable stage */}
+                    {item.isActionable && onInitiateTransition && (
+                      <div className="journey-log-action-container" onClick={(e) => e.stopPropagation()}>
+                        <span className="journey-action-prompt">
+                          You are authorized to record this stage transition.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onInitiateTransition(item.transitionStage, item)}
+                          className="btn btn-primary btn-sm"
+                        >
+                          <PlayCircle size={14} aria-hidden="true" />
+                          <span>Advance to {item.label}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Restricted notice inside card */}
+                    {item.isRestricted && onRestrictedClick && (
+                      <div className="journey-log-action-container" onClick={(e) => e.stopPropagation()}>
+                        <span className="journey-restricted-notice">
+                          <Lock size={13} aria-hidden="true" />
+                          <span>Restricted to {item.fallbackRole} role</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onRestrictedClick(item)}
+                          className="btn btn-outline btn-xs"
+                        >
+                          View Restriction Info
+                        </button>
+                      </div>
+                    )}
+
+                    {(item.state === 'completed' || item.state === 'current') && onInspectStage && (
+                      <div style={{ marginTop: '0.5rem', textAlign: 'right' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)', fontWeight: 500 }}>
+                          Inspect details →
+                        </span>
+                      </div>
                     )}
                   </div>
                 </li>

@@ -20,7 +20,7 @@ import {
   Info
 } from 'lucide-react';
 
-export const Dashboard = ({ setCurrentTab, setSelectedOrganId }) => {
+export const Dashboard = ({ setCurrentTab, setSelectedOrganId, openOrgan }) => {
   const { authFetch, user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const [stats, setStats] = useState(null);
@@ -128,8 +128,12 @@ export const Dashboard = ({ setCurrentTab, setSelectedOrganId }) => {
   };
 
   const handleNavigateDetail = (organId) => {
-    setSelectedOrganId(organId);
-    setCurrentTab('organ-detail');
+    if (openOrgan) {
+      openOrgan(organId);
+    } else {
+      setSelectedOrganId?.(organId);
+      setCurrentTab('organ-detail');
+    }
   };
 
   if (loading) {
@@ -255,8 +259,16 @@ export const Dashboard = ({ setCurrentTab, setSelectedOrganId }) => {
                         <button 
                           className="btn btn-outline btn-sm" 
                           onClick={() => {
-                            if (panel.tab === 'organs') setSelectedOrganId(item.id);
-                            setCurrentTab(panel.tab);
+                            if (panel.tab === 'organs') {
+                              if (openOrgan) {
+                                openOrgan(item.id);
+                              } else {
+                                setSelectedOrganId?.(item.id);
+                                setCurrentTab('organ-detail');
+                              }
+                            } else {
+                              setCurrentTab(panel.tab);
+                            }
                           }}
                         >
                           View
@@ -510,8 +522,12 @@ export const Dashboard = ({ setCurrentTab, setSelectedOrganId }) => {
                     <td>
                       <button
                         onClick={() => {
-                          setSelectedOrganId(org.id);
-                          setCurrentTab('organ-detail');
+                          if (openOrgan) {
+                            openOrgan(org.id);
+                          } else {
+                            setSelectedOrganId?.(org.id);
+                            setCurrentTab('organ-detail');
+                          }
                         }}
                         className="btn btn-outline btn-sm"
                       >

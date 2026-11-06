@@ -6,6 +6,24 @@ import { RequestMessage } from '../components/RequestMessage';
 import { getApiError } from '../apiErrors';
 import { Users, Plus, Search } from 'lucide-react';
 
+const calcBmi = (h, w) =>
+  h > 0 && w > 0 ? Math.round((w / ((h / 100) ** 2)) * 10) / 10 : null;
+
+const emptyForm = (user) => ({
+  recipient_id: '',
+  name: '',
+  age: '',
+  gender: '',
+  blood_group: 'O+',
+  required_organ: 'Kidney',
+  height_cm: '',
+  weight_kg: '',
+  hospital_id: user?.hospital_id || '',
+  cpra: 0,
+  dialysis_months: 0,
+  urgency_tier: 'STANDARD'
+});
+
 export const Recipients = () => {
   const { authFetch, user } = useAuth();
   const [recipients, setRecipients] = useState([]);
@@ -20,21 +38,7 @@ export const Recipients = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const [formData, setFormData] = useState({
-    recipient_id: '',
-    name: '',
-    age: 40,
-    gender: 'FEMALE',
-    blood_group: 'O+',
-    required_organ: 'Kidney',
-    height_cm: 165.0,
-    weight_kg: 62.0,
-    bmi: 22.8,
-    hospital_id: user?.hospital_id || '',
-    cpra: 0.0,
-    dialysis_months: 12.0,
-    urgency_tier: 'STANDARD'
-  });
+  const [formData, setFormData] = useState(() => emptyForm(user));
 
   useEffect(() => {
     fetchRecipients();
@@ -72,29 +76,45 @@ export const Recipients = () => {
     setError('');
     setSuccess('');
     try {
+      const {
+        recipient_id,
+        name,
+        age,
+        gender,
+        blood_group,
+        required_organ,
+        height_cm,
+        weight_kg,
+        hospital_id,
+        cpra,
+        dialysis_months,
+        urgency_tier
+      } = formData;
+      const isKidney = required_organ === 'Kidney';
+      const payload = {
+        recipient_id,
+        name,
+        age: Number(age),
+        gender,
+        blood_group,
+        required_organ,
+        height_cm: Number(height_cm),
+        weight_kg: Number(weight_kg),
+        bmi: calcBmi(Number(height_cm), Number(weight_kg)),
+        hospital_id: Number(hospital_id),
+        cpra: Number(cpra) || 0,
+        dialysis_months: isKidney ? Number(dialysis_months) || 0 : 0,
+        urgency_tier
+      };
       const res = await authFetch('/api/recipients', {
         method: 'POST',
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
       if (!res.ok) {
         throw new Error(await getApiError(res, 'recipient registration'));
       }
       setShowModal(false);
-      setFormData({
-        recipient_id: '',
-        name: '',
-        age: 40,
-        gender: 'FEMALE',
-        blood_group: 'O+',
-        required_organ: 'Kidney',
-        height_cm: 165.0,
-        weight_kg: 62.0,
-        bmi: 22.8,
-        hospital_id: user?.hospital_id || '',
-        cpra: 0.0,
-        dialysis_months: 12.0,
-        urgency_tier: 'STANDARD'
-      });
+      setFormData(emptyForm(user));
       setSuccess('Patient enrolled on transplant waiting list successfully.');
       await fetchRecipients();
     } catch (err) {
@@ -262,6 +282,7 @@ export const Recipients = () => {
                       value={formData.recipient_id} 
                       onChange={(e) => setFormData({ ...formData, recipient_id: e.target.value })} 
                       required 
+                      aria-required="true"
                     />
                   </div>
                   <div className="form-group">
@@ -274,6 +295,7 @@ export const Recipients = () => {
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
                       placeholder="e.g. Priya Sharma" 
                       required 
+                      aria-required="true"
                     />
                   </div>
                 </div>
@@ -285,7 +307,16 @@ export const Recipients = () => {
                       id="rec-organ"
                       className="form-select" 
                       value={formData.required_organ} 
-                      onChange={(e) => setFormData({ ...formData, required_organ: e.target.value })}
+                      onChange={(e) => {
+                        const required_organ = e.target.value;
+                        setFormData({
+                          ...formData,
+                          required_organ,
+                          dialysis_months: required_organ === 'Kidney' ? formData.dialysis_months : 0
+                        });
+                      }}
+                      required
+                      aria-required="true"
                     >
                       <option value="Kidney">Kidney</option>
                       <option value="Liver">Liver</option>
@@ -301,6 +332,8 @@ export const Recipients = () => {
                       className="form-select" 
                       value={formData.blood_group} 
                       onChange={(e) => setFormData({ ...formData, blood_group: e.target.value })}
+                      required
+                      aria-required="true"
                     >
                       <option value="O+">O+</option>
                       <option value="O-">O-</option>
@@ -313,17 +346,38 @@ export const Recipients = () => {
                     </select>
                   </div>
                   <div className="form-group">
+                    <label htmlFor="rec-gender" className="form-label">Gender <span className="required-star">*</span></label>
+                    <select
+                      id="rec-gender"
+                      className="form-select"
+                      value={formData.gender}
+                      onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                      required
+                      aria-required="true"
+                    >
+                      <option value="" disabled>Select gender</option>
+                      <option value="MALE">Male</option>
+                      <option value="FEMALE">Female</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
                     <label htmlFor="rec-urgency" className="form-label">Urgency Tier <span className="required-star">*</span></label>
                     <select 
                       id="rec-urgency"
                       className="form-select" 
                       value={formData.urgency_tier} 
                       onChange={(e) => setFormData({ ...formData, urgency_tier: e.target.value })}
+                      required
+                      aria-required="true"
                     >
                       <option value="STANDARD">Standard</option>
                       <option value="URGENT">Urgent Priority</option>
                       <option value="ELECTIVE">Elective</option>
                     </select>
+                    <small style={{ color: 'var(--text-muted)' }}>
+                      Recorded for reference. It does not change candidate ranking.
+                    </small>
                   </div>
                 </div>
 
@@ -335,25 +389,41 @@ export const Recipients = () => {
                       type="number" 
                       className="form-input" 
                       value={formData.age} 
-                      onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value, 10) || 0 })} 
+                      onChange={(e) => setFormData({ ...formData, age: e.target.value })}
                       required 
                       min="18" 
                       max="75" 
+                      aria-required="true"
                     />
                   </div>
                   <div className="form-group">
-                    <label htmlFor="rec-height" className="form-label">Height (cm)</label>
+                    <label htmlFor="rec-height" className="form-label">Height (cm) <span className="required-star">*</span></label>
                     <input 
                       id="rec-height"
                       type="number" 
+                      step="0.1"
                       className="form-input" 
                       value={formData.height_cm} 
-                      onChange={(e) => {
-                        const h = parseFloat(e.target.value) || 165;
-                        const w = formData.weight_kg || 60;
-                        const calcBmi = parseFloat((w / ((h / 100) * (h / 100))).toFixed(1));
-                        setFormData({ ...formData, height_cm: h, bmi: calcBmi });
-                      }} 
+                      onChange={(e) => setFormData({ ...formData, height_cm: e.target.value })}
+                      required
+                      min="30"
+                      max="250"
+                      aria-required="true"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="rec-weight" className="form-label">Weight (kg) <span className="required-star">*</span></label>
+                    <input
+                      id="rec-weight"
+                      type="number"
+                      step="0.1"
+                      className="form-input"
+                      value={formData.weight_kg}
+                      onChange={(e) => setFormData({ ...formData, weight_kg: e.target.value })}
+                      required
+                      min="2"
+                      max="400"
+                      aria-required="true"
                     />
                   </div>
                   <div className="form-group">
@@ -363,7 +433,7 @@ export const Recipients = () => {
                       type="number" 
                       step="0.1" 
                       className="form-input" 
-                      value={formData.bmi} 
+                      value={calcBmi(Number(formData.height_cm), Number(formData.weight_kg)) ?? '-'}
                       readOnly 
                       style={{ backgroundColor: 'var(--bg-subtle)' }} 
                     />
@@ -373,14 +443,21 @@ export const Recipients = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
                   <div className="form-group">
                     <label htmlFor="rec-dialysis" className="form-label">Dialysis Duration (Months)</label>
-                    <input 
+                    <input
                       id="rec-dialysis"
-                      type="number" 
-                      step="1" 
-                      className="form-input" 
-                      value={formData.dialysis_months} 
-                      onChange={(e) => setFormData({ ...formData, dialysis_months: parseFloat(e.target.value) || 0 })} 
+                      type="number"
+                      step="1"
+                      className="form-input"
+                      value={formData.required_organ === 'Kidney' ? formData.dialysis_months : 0}
+                      onChange={(e) => setFormData({ ...formData, dialysis_months: e.target.value })}
+                      min="0"
+                      disabled={formData.required_organ !== 'Kidney'}
                     />
+                    {formData.required_organ !== 'Kidney' && (
+                      <small style={{ color: 'var(--text-muted)' }}>
+                        Not applicable (dialysis is kidney-specific). Stored as 0.
+                      </small>
+                    )}
                   </div>
                   <div className="form-group">
                     <label htmlFor="rec-cpra" className="form-label">Sensitization / cPRA (%)</label>
@@ -392,30 +469,38 @@ export const Recipients = () => {
                       min="0" 
                       max="100" 
                       value={formData.cpra} 
-                      onChange={(e) => setFormData({ ...formData, cpra: parseFloat(e.target.value) || 0 })} 
+                      onChange={(e) => setFormData({ ...formData, cpra: e.target.value })}
                     />
                   </div>
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="rec-hospital" className="form-label">Managing Hospital</label>
+                  <label htmlFor="rec-hospital" className="form-label">Managing Hospital <span className="required-star">*</span></label>
                   <select 
                     id="rec-hospital"
                     className="form-select" 
                     value={formData.hospital_id} 
-                    onChange={(e) => setFormData({ ...formData, hospital_id: parseInt(e.target.value, 10) })}
+                    onChange={(e) => setFormData({ ...formData, hospital_id: e.target.value ? parseInt(e.target.value, 10) : '' })}
+                    required
+                    aria-required="true"
                   >
+                    <option value="" disabled>Select a hospital</option>
                     {hospitals.map(h => (
                       <option key={h.id} value={h.id}>{h.name} ({h.city})</option>
                     ))}
                   </select>
+                  {hospitals.length === 0 && (
+                    <small style={{ color: 'var(--text-muted)' }}>
+                      No hospital is assigned to your account, so registration is unavailable.
+                    </small>
+                  )}
                 </div>
               </div>
               <div className="modal-footer">
                 <button type="button" onClick={() => setShowModal(false)} className="btn btn-outline" disabled={submitting}>
                   Cancel
                 </button>
-                <button type="submit" disabled={submitting} className="btn btn-primary">
+                <button type="submit" disabled={submitting || !formData.hospital_id} className="btn btn-primary">
                   {submitting ? 'Enrolling Patient...' : 'Enroll Patient on Waiting List'}
                 </button>
               </div>

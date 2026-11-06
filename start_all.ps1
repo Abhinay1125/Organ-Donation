@@ -6,25 +6,45 @@ Write-Host "====================================================================
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+function Wait-ForPort {
+    param([string]$Address, [int]$Port, [int]$TimeoutSeconds = 60)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-NetConnection -ComputerName $Address -Port $Port -InformationLevel Quiet -WarningAction SilentlyContinue) {
+            return $true
+        }
+        Start-Sleep -Seconds 1
+    }
+    return $false
+}
+
 # 1. Start Hardhat Node
-Write-Host "`n[1/3] Starting Local Blockchain Node..." -ForegroundColor Yellow
+Write-Host "`n[1/4] Starting Local Blockchain Node..." -ForegroundColor Yellow
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root/blockchain'; npx hardhat node"
 
-Start-Sleep -Seconds 5
+if (-not (Wait-ForPort -Address "127.0.0.1" -Port 8545)) {
+    Write-Host "Hardhat node did not open port 8545 within 60 seconds. Aborting." -ForegroundColor Red
+    exit 1
+}
 
 # 2. Deploy Contracts
-Write-Host "[2/3] Deploying Smart Contracts..." -ForegroundColor Yellow
+Write-Host "[2/4] Deploying Smart Contracts..." -ForegroundColor Yellow
 Push-Location "$Root/blockchain"
 npx hardhat run scripts/deploy.js --network localhost
+$deployExit = $LASTEXITCODE
 Pop-Location
+if ($deployExit -ne 0) {
+    Write-Host "Contract deployment failed (exit code $deployExit). Aborting." -ForegroundColor Red
+    exit 1
+}
 
 # 3. Start Backend
-Write-Host "[3/4] Launching FastAPI Backend on Port 8000..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root/backend'; python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
+Write-Host "[3/4] Launching FastAPI Backend on http://localhost:8000 ..." -ForegroundColor Yellow
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root/backend'; python -m uvicorn app.main:app --host localhost --port 8000 --reload"
 
 # 4. Start Frontend
-Write-Host "[4/4] Launching Vite React Frontend on Port 5173..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root/frontend'; npm run dev"
+Write-Host "[4/4] Launching Vite React Frontend on http://localhost:5173 ..." -ForegroundColor Yellow
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root/frontend'; npm run dev -- --host localhost --port 5173 --strictPort"
 
 Write-Host "`n===============================================================================" -ForegroundColor Green
 Write-Host "All system tiers launched!" -ForegroundColor Green

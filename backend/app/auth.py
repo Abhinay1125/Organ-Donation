@@ -72,6 +72,20 @@ def require_roles(allowed_roles: list):
     return role_checker
 
 
+def require_matching_reviewer(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role == "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Matching and ML decision support is not available to administrators",
+        )
+    if current_user.role != "HOSPITAL" or current_user.operational_role != "ORGAN_MATCHING_ORGANIZER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Matching and ML decision support requires a hospital user with ORGAN_MATCHING_ORGANIZER duty",
+        )
+    return current_user
+
+
 def require_hospital_assignment(user: User, hospital_id: int) -> None:
     """Reject hospital users attempting to act on another hospital's records."""
     if user.role == "ADMIN":

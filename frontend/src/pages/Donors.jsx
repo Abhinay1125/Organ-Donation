@@ -1,10 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { StatusBadge } from '../components/StatusBadge';
 import { canPerformAction } from '../authz';
 import { RequestMessage } from '../components/RequestMessage';
 import { getApiError } from '../apiErrors';
-import { HeartHandshake, Plus, CheckCircle, XCircle, Search, ShieldCheck } from 'lucide-react';
+import { HeartHandshake, Plus, CheckCircle, XCircle, Search, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
+
+const calcBmi = (h, w) =>
+  h > 0 && w > 0 ? Math.round((w / ((h / 100) ** 2)) * 10) / 10 : null;
 
 export const Donors = () => {
   const { authFetch, user } = useAuth();
@@ -17,18 +20,18 @@ export const Donors = () => {
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [selectedDonor, setSelectedDonor] = useState(null);
+  const [ledgerOffline, setLedgerOffline] = useState(false);
 
   // Form states
   const [formData, setFormData] = useState({
     donor_id: '',
     name: '',
-    age: 35,
+    age: '',
     gender: 'MALE',
     blood_group: 'O+',
     organ_type: 'Kidney',
-    height_cm: 172.0,
-    weight_kg: 68.0,
-    bmi: 23.0,
+    height_cm: '',
+    weight_kg: '',
     hospital_id: user?.hospital_id || '',
     medical_notes: ''
   });
@@ -38,9 +41,42 @@ export const Donors = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Scroll state & ref for donor registration modal
+  const registerModalBodyRef = useRef(null);
+  const [isScrolledToBottom, setIsScrolledToBottom] = useState(false);
+
+  const handleModalScroll = (e) => {
+    const el = e.currentTarget;
+    if (!el) return;
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+    setIsScrolledToBottom(atBottom);
+  };
+
+  const handleScrollToggle = () => {
+    const el = registerModalBodyRef.current;
+    if (!el) return;
+    if (isScrolledToBottom) {
+      el.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }
+  };
+
+  useEffect(() => {
+    if (showRegisterModal) {
+      setIsScrolledToBottom(false);
+      setTimeout(() => {
+        if (registerModalBodyRef.current) {
+          registerModalBodyRef.current.scrollTop = 0;
+        }
+      }, 0);
+    }
+  }, [showRegisterModal]);
+
   useEffect(() => {
     fetchDonors();
     if (canPerformAction(user, 'registerDonor')) fetchHospitals();
+    fetchLedgerStatus();
   }, [user]);
 
   const fetchDonors = async () => {
@@ -67,6 +103,15 @@ export const Donors = () => {
     }
   };
 
+  const fetchLedgerStatus = async () => {
+    try {
+      const res = await authFetch('/api/blockchain/status');
+      if (res.ok) setLedgerOffline((await res.json()).connected === false);
+    } catch {
+      // Ledger status is non-blocking for donor registration.
+    }
+  };
+
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     if (submitting) return;
@@ -74,9 +119,34 @@ export const Donors = () => {
     setError('');
     setSuccess('');
     try {
+      const {
+        donor_id,
+        name,
+        age,
+        gender,
+        blood_group,
+        organ_type,
+        height_cm,
+        weight_kg,
+        hospital_id,
+        medical_notes
+      } = formData;
+      const payload = {
+        donor_id,
+        name,
+        age: Number(age),
+        gender,
+        blood_group,
+        organ_type,
+        height_cm: Number(height_cm),
+        weight_kg: Number(weight_kg),
+        bmi: calcBmi(Number(height_cm), Number(weight_kg)),
+        hospital_id: Number(hospital_id),
+        medical_notes
+      };
       const res = await authFetch('/api/donors', {
         method: 'POST',
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
       if (!res.ok) {
         throw new Error(await getApiError(res, 'donor registration'));
@@ -85,13 +155,12 @@ export const Donors = () => {
       setFormData({
         donor_id: '',
         name: '',
-        age: 35,
+        age: '',
         gender: 'MALE',
         blood_group: 'O+',
         organ_type: 'Kidney',
-        height_cm: 172.0,
-        weight_kg: 68.0,
-        bmi: 23.0,
+        height_cm: '',
+        weight_kg: '',
         hospital_id: user?.hospital_id || '',
         medical_notes: ''
       });
@@ -105,7 +174,7 @@ export const Donors = () => {
   };
 
   const handleApprovalSubmit = async (isApproved) => {
-    if (!selectedDonor || submitting) return;
+    if (!selectedDonor || submitting || !approvalNotes.trim()) return;
     setSubmitting(true);
     setError('');
     setSuccess('');
@@ -114,7 +183,7 @@ export const Donors = () => {
         method: 'POST',
         body: JSON.stringify({
           is_approved: isApproved,
-          medical_notes: approvalNotes || (isApproved ? 'Approved by clinical team' : 'Medical exclusion criteria met')
+          medical_notes: approvalNotes.trim()
         })
       });
       if (!res.ok) {
@@ -294,17 +363,34 @@ export const Donors = () => {
           <div className="modal-card">
             <div className="modal-header">
               <h3 id="register-donor-title" className="modal-title">Register Prospective Organ Donor</h3>
-              <button 
-                type="button"
-                onClick={() => setShowRegisterModal(false)} 
-                className="btn btn-outline btn-sm"
-                aria-label="Close dialog"
-              >
-                ✕
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button 
+                  type="button"
+                  onClick={handleScrollToggle} 
+                  className="modal-scroll-btn"
+                  aria-label={isScrolledToBottom ? "Scroll to top of form" : "Scroll to bottom of form"}
+                  title={isScrolledToBottom ? "Scroll to top of form" : "Scroll to bottom of form"}
+                >
+                  {isScrolledToBottom ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  <span>{isScrolledToBottom ? 'Scroll Up' : 'Scroll Down'}</span>
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowRegisterModal(false)} 
+                  className="btn btn-outline btn-sm"
+                  aria-label="Close dialog"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             <form onSubmit={handleRegisterSubmit}>
-              <div className="modal-body">
+              <div 
+                className="modal-body"
+                ref={registerModalBodyRef}
+                onScroll={handleModalScroll}
+                style={{ scrollBehavior: 'smooth' }}
+              >
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
                   <div className="form-group">
                     <label htmlFor="reg-donor-id" className="form-label">Donor ID <span className="required-star">*</span></label>
@@ -315,6 +401,7 @@ export const Donors = () => {
                       value={formData.donor_id} 
                       onChange={(e) => setFormData({ ...formData, donor_id: e.target.value })} 
                       required 
+                      aria-required="true"
                     />
                   </div>
                   <div className="form-group">
@@ -327,6 +414,7 @@ export const Donors = () => {
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
                       placeholder="e.g. Ramesh Kumar" 
                       required 
+                      aria-required="true"
                     />
                   </div>
                 </div>
@@ -339,6 +427,8 @@ export const Donors = () => {
                       className="form-select" 
                       value={formData.organ_type} 
                       onChange={(e) => setFormData({ ...formData, organ_type: e.target.value })}
+                      required
+                      aria-required="true"
                     >
                       <option value="Kidney">Kidney</option>
                       <option value="Liver">Liver</option>
@@ -354,6 +444,8 @@ export const Donors = () => {
                       className="form-select" 
                       value={formData.blood_group} 
                       onChange={(e) => setFormData({ ...formData, blood_group: e.target.value })}
+                      required
+                      aria-required="true"
                     >
                       <option value="O+">O+</option>
                       <option value="O-">O-</option>
@@ -372,6 +464,8 @@ export const Donors = () => {
                       className="form-select" 
                       value={formData.gender} 
                       onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                      required
+                      aria-required="true"
                     >
                       <option value="MALE">Male</option>
                       <option value="FEMALE">Female</option>
@@ -388,10 +482,26 @@ export const Donors = () => {
                       type="number" 
                       className="form-input" 
                       value={formData.age} 
-                      onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value, 10) || 0 })} 
+                      onChange={(e) => setFormData({ ...formData, age: e.target.value })}
                       required 
                       min="18" 
                       max="75" 
+                      aria-required="true"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="reg-height" className="form-label">Height (cm) <span className="required-star">*</span></label>
+                    <input
+                      id="reg-height"
+                      type="number"
+                      step="0.1"
+                      className="form-input"
+                      value={formData.height_cm}
+                      onChange={(e) => setFormData({ ...formData, height_cm: e.target.value })}
+                      required
+                      min="30"
+                      max="250"
+                      aria-required="true"
                     />
                   </div>
                   <div className="form-group">
@@ -402,12 +512,11 @@ export const Donors = () => {
                       step="0.5" 
                       className="form-input" 
                       value={formData.weight_kg} 
-                      onChange={(e) => {
-                        const w = parseFloat(e.target.value) || 0;
-                        const h = (formData.height_cm || 170) / 100;
-                        const calcBmi = h > 0 ? parseFloat((w / (h * h)).toFixed(1)) : 24.0;
-                        setFormData({ ...formData, weight_kg: w, bmi: calcBmi });
-                      }} 
+                      onChange={(e) => setFormData({ ...formData, weight_kg: e.target.value })}
+                      required
+                      min="2"
+                      max="400"
+                      aria-required="true"
                     />
                   </div>
                   <div className="form-group">
@@ -417,7 +526,7 @@ export const Donors = () => {
                       type="number" 
                       step="0.1" 
                       className="form-input" 
-                      value={formData.bmi} 
+                      value={calcBmi(Number(formData.height_cm), Number(formData.weight_kg)) ?? '-'}
                       readOnly 
                       style={{ backgroundColor: 'var(--bg-subtle)' }} 
                     />
@@ -448,15 +557,33 @@ export const Donors = () => {
                     onChange={(e) => setFormData({ ...formData, medical_notes: e.target.value })} 
                     placeholder="Clinical observations, serology, hemodynamic stability..." 
                   />
+                  <small style={{ color: 'var(--text-muted)' }}>Do not enter personal identifiers.</small>
                 </div>
+                {ledgerOffline && (
+                  <small style={{ color: 'var(--text-muted)' }}>
+                    Ledger node is offline: a locally generated reference will be stored instead of an on-chain transaction.
+                  </small>
+                )}
               </div>
-              <div className="modal-footer">
-                <button type="button" onClick={() => setShowRegisterModal(false)} className="btn btn-outline" disabled={submitting}>
-                  Cancel
+              <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={handleScrollToggle}
+                  className="modal-scroll-btn"
+                  title={isScrolledToBottom ? "Scroll to top of form" : "Scroll to bottom of form"}
+                  aria-label={isScrolledToBottom ? "Scroll to top of form" : "Scroll to bottom of form"}
+                >
+                  {isScrolledToBottom ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  <span>{isScrolledToBottom ? 'Scroll to Top' : 'Scroll to Bottom'}</span>
                 </button>
-                <button type="submit" disabled={submitting} className="btn btn-primary">
-                  {submitting ? 'Registering...' : 'Register Donor'}
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button type="button" onClick={() => setShowRegisterModal(false)} className="btn btn-outline" disabled={submitting}>
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={submitting} className="btn btn-primary">
+                    {submitting ? 'Registering...' : 'Register Donor'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -495,7 +622,7 @@ export const Donors = () => {
                   value={approvalNotes}
                   onChange={(e) => setApprovalNotes(e.target.value)}
                   placeholder="Record formal clinical clearance statement or reason for medical exclusion..."
-                  required
+                  aria-required="true"
                 />
               </div>
             </div>
@@ -503,7 +630,7 @@ export const Donors = () => {
               <button 
                 type="button" 
                 onClick={() => handleApprovalSubmit(false)} 
-                disabled={submitting}
+                disabled={submitting || !approvalNotes.trim()}
                 className="btn btn-danger"
               >
                 <XCircle size={15} aria-hidden="true" />
@@ -513,7 +640,7 @@ export const Donors = () => {
               <button 
                 type="button" 
                 onClick={() => handleApprovalSubmit(true)} 
-                disabled={submitting}
+                disabled={submitting || !approvalNotes.trim()}
                 className="btn btn-primary"
               >
                 <CheckCircle size={15} aria-hidden="true" />
