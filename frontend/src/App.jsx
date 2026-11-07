@@ -5,7 +5,6 @@ import { Sidebar } from './components/Sidebar';
 import { canAccessTab } from './utils/access';
 
 // Pages
-import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Donors } from './pages/Donors';
 import { Recipients } from './pages/Recipients';
@@ -102,12 +101,22 @@ export function App() {
     }
   }, [user, currentTab]);
 
+  useEffect(() => {
+    if (!initializing && !user) {
+      window.location.replace('/login.html');
+    }
+  }, [initializing, user]);
+
   if (initializing) {
     return <div className="page-container" role="status" aria-live="polite">Restoring your session...</div>;
   }
 
   if (!user) {
-    return <Login />;
+    return (
+      <div className="page-container" role="status" aria-live="polite">
+        Redirecting to sign in...
+      </div>
+    );
   }
 
   if (user.role === 'DONOR' || user.role === 'RECIPIENT') {

@@ -129,7 +129,7 @@ export const Sidebar = ({
             {!collapsed && (
               <div className="sidebar-brand-text">
                 <div className="sidebar-brand-title">
-                  OrganFlow <span className="sidebar-brand-badge">{user?.role || 'PORTAL'}</span>
+                  Vital Link <span className="sidebar-brand-badge">{user?.role || 'PORTAL'}</span>
                 </div>
                 <div className="sidebar-brand-sub">Transplantation Registry</div>
               </div>

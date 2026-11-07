@@ -160,7 +160,7 @@ This script will automatically:
 1. Spin up the Hardhat local blockchain node (`http://127.0.0.1:8545`).
 2. Deploy both smart contracts and generate updated ABI artifacts.
 3. Start the FastAPI backend on `http://127.0.0.1:8000`.
-4. Launch the Vite React frontend on `http://localhost:5173`.
+4. Launch the Vite React frontend on `http://localhost:5173` (the VitalLink landing page).
 
 ---
 
@@ -210,7 +210,7 @@ npm run dev
 
 ## 8. End-to-End Demonstration Walkthrough
 
-1. **Access Portal:** Navigate to `http://localhost:5173`.
+1. **Access the landing page:** Navigate to `http://localhost:5173`, then choose **Sign in** (`/login.html`). A successful login opens the portal at `/app.html`.
 2. **Log In as Matching Lead:** Use `dr_sharma` / `hospital123`.
 3. **Inspect Donors & Recipients:**
    - Go to **Donors**: Review donor records, blood groups, and medical clearance statuses.
